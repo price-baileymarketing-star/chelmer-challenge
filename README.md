@@ -12,7 +12,7 @@ Two-screen exhibition game. Players steer a Price Bailey river cruise boat down 
 ## Publish on GitHub Pages
 1. Create a repo under `price-baileymarketing-star` and upload everything, keeping the folders.
 2. Settings > Pages > Deploy from branch > `main` / root.
-3. Open `https://price-baileymarketing-star.github.io/<repo>/` on the big screen.
+3. Open `[https://price-baileymarketing-star.github.io/<repo>/](https://price-baileymarketing-star.github.io/chelmer-challenge)` on the big screen.
 4. Scan the QR code with a phone.
 
 ## Test at your desk without a phone

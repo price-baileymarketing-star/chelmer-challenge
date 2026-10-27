@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b2341">
+<title>Chelmer Challenge controller | Price Bailey</title>
+<style>
+  /* BRAND SETTINGS: keep in sync with the display page (TODO: confirm hex values) */
+  :root {
+    --pb-navy: #0b2341; --pb-navy-2: #12325a; --pb-accent: #e4007c;
+    --pb-good: #2fbf8f; --pb-gold: #f5b82e; --pb-risk: #ff5a4f; --pb-muted: #a9b8cc;
+    --font: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--pb-navy); color: #fff; font-family: var(--font);
+               overscroll-behavior: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { display: flex; flex-direction: column; min-height: 100dvh; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; }
+  .logo { background: #fff; color: var(--pb-navy); font-weight: 800; padding: 6px 10px; border-radius: 6px; font-size: 15px; } /* TODO: swap for logo image */
+  .status { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #999; }
+  .dot.connected { background: var(--pb-good); } .dot.connecting { background: var(--pb-gold); } .dot.bad { background: var(--pb-risk); }
+  .hidden { display: none !important; }
+  .view { flex: 1; display: flex; flex-direction: column; padding: 0 16px 20px; gap: 16px; }
+  h1 { margin: 6px 0 0; font-size: 34px; } h1 span { color: var(--pb-accent); }
+  p { color: var(--pb-muted); font-size: 17px; line-height: 1.4; margin: 0; }
+  .btn { font: inherit; font-weight: 800; font-size: 22px; border: 0; border-radius: 16px; padding: 20px; width: 100%;
+         background: var(--pb-accent); color: #fff; cursor: pointer; }
+  .btn.secondary { background: transparent; border: 2px solid rgba(255,255,255,.5); }
+  .btn:active { transform: scale(.98); }
+  .stats { display: flex; justify-content: space-between; font-weight: 800; font-size: 20px; }
+  /* Steering pad: the whole area tracks the finger left to right */
+  #pad { flex: 1; min-height: 240px; border-radius: 22px; position: relative; overflow: hidden;
+         background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.12), rgba(255,255,255,.04));
+         border: 2px solid rgba(255,255,255,.15); }
+  #knob { position: absolute; top: 50%; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%;
+          background: var(--pb-accent); box-shadow: 0 0 30px var(--pb-accent); left: 50%; }
+  #padHint { position: absolute; inset: auto 0 14px; text-align: center; color: var(--pb-muted); font-weight: 700; }
+  .arrows { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 18px;
+            font-size: 40px; color: rgba(255,255,255,.25); pointer-events: none; }
+  .tilt { font-size: 15px; padding: 12px; }
+  .big { font-size: 72px; font-weight: 800; text-align: center; line-height: 1; margin-top: 10px; }
+  .hs { text-align: center; color: var(--pb-gold); font-weight: 700; }
+  .msg { text-align: center; font-size: 19px; color: #fff; }
+  .error { background: rgba(255,90,79,.15); border: 1px solid var(--pb-risk); padding: 14px; border-radius: 12px; color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Price Bailey</div>
+  <div class="status"><span class="dot connecting" id="dot"></span><span id="statusText">Connecting…</span></div>
+</header>
+
+<!-- LOBBY -->
+<section class="view" id="vLobby">
+  <h1>Chelmer <span>Challenge</span></h1>
+  <p>Watch the big screen. Slide your finger left and right to steer the Price Bailey cruise boat down the River Chelmer. Collect wins, avoid risks and steer through the gap in each lock gate.</p>
+  <div class="error hidden" id="err"></div>
+  <div style="flex:1"></div>
+  <button class="btn" id="startBtn" disabled>Start cruise</button>
+</section>
+
+<!-- PLAYING -->
+<section class="view hidden" id="vPlay">
+  <div class="stats"><span>Score <span id="score">0</span></span><span>Lives <span id="lives">3</span></span><span><span id="time">60</span>s</span></div>
+  <div id="pad" aria-label="Steering pad. Slide left or right.">
+    <div class="arrows"><span>◀</span><span>▶</span></div>
+    <div id="knob"></div>
+    <div id="padHint">Slide to steer</div>
+  </div>
+  <button class="btn secondary tilt" id="tiltBtn">Use tilt instead</button>
+</section>
+
+<!-- END -->
+<section class="view hidden" id="vEnd">
+  <div class="big" id="final">0</div>
+  <div class="hs" id="high"></div>
+  <div class="msg" id="endMsg"></div>
+  <div style="flex:1"></div>
+  <button class="btn" id="detailsBtn">Leave your details</button>
+  <button class="btn secondary" id="againBtn">Play again</button>
+</section>
+
+<script src="../lib/link.js"></script>
+<script>
+"use strict";
+const FORM = { base: "https://www.pricebailey.co.uk/enquiry-form/game/", scoreField: "wpf72332_23", urlField: "wpf72332_31" }; // TODO: confirm _31
+
+const $ = (id) => document.getElementById(id);
+const room = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+let last = { state: "title", score: 0, high: 0, gameUrl: "" };
+let x = 0.5, lastSent = 0, tilt = false;
+
+function show(id) { ["vLobby", "vPlay", "vEnd"].forEach((v) => $(v).classList.toggle("hidden", v !== id)); }
+
+function setStatus(s) {
+  const map = { connected: ["connected", "Connected"], connecting: ["connecting", "Connecting…"],
+                lost: ["bad", "Reconnecting…"], nogame: ["bad", "Game not found"], offline: ["bad", "No internet"] };
+  const m = map[s] || ["connecting", s];
+  $("dot").className = "dot " + m[0]; $("statusText").textContent = m[1];
+  $("startBtn").disabled = s !== "connected";
+  const err = $("err");
+  if (s === "nogame") { err.textContent = "Can't find the game. Check the big screen is open and rescan the QR code."; err.classList.remove("hidden"); }
+  else if (s === "offline") { err.textContent = "This phone needs an internet connection. Try switching to mobile data."; err.classList.remove("hidden"); }
+  else err.classList.add("hidden");
+}
+
+if (!room) { setStatus("nogame"); }
+const link = room ? GPLink.createController(room, { onStatus: setStatus, onMessage: onState }) : null;
+
+/* Display -> controller: mirror the big screen state */
+function onState(msg) {
+  if (!msg || msg.t !== "state") return;
+  last = msg;
+  if (msg.state === "title") show("vLobby");
+  else if (msg.state === "playing" || msg.state === "countdown") {
+    show("vPlay");
+    $("score").textContent = msg.score; $("lives").textContent = msg.lives; $("time").textContent = msg.time;
+  } else if (msg.state === "end") {
+    show("vEnd");
+    $("final").textContent = msg.score;
+    $("high").textContent = "High score: " + msg.high;
+    $("endMsg").textContent = msg.msg || "";
+    if (navigator.vibrate) navigator.vibrate(120);
+  }
+}
+
+/* Send position, throttled to roughly 40 updates per second */
+function sendX(v) {
+  x = Math.max(0, Math.min(1, v));
+  $("knob").style.left = `calc(48px + ${x} * (100% - 96px))`; // keep knob inside the pad
+  const now = performance.now();
+  if (now - lastSent > 25 && link) { lastSent = now; link.send({ t: "pos", x }); }
+}
+
+/* Touch / mouse steering on the pad */
+const pad = $("pad");
+function padMove(e) {
+  if (tilt) return;
+  const r = pad.getBoundingClientRect();
+  // Map the middle 80% of the pad to the full track, so edges are easy to reach
+  sendX(((e.clientX - r.left) / r.width - 0.1) / 0.8);
+  e.preventDefault();
+}
+pad.addEventListener("pointerdown", (e) => { pad.setPointerCapture(e.pointerId); padMove(e); $("padHint").classList.add("hidden"); });
+pad.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "touch") padMove(e); });
+
+/* Optional tilt control (iOS asks for permission) */
+$("tiltBtn").onclick = async () => {
+  if (tilt) { tilt = false; $("tiltBtn").textContent = "Use tilt instead"; return; }
+  try {
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res !== "granted") return;
+    }
+    tilt = true; $("tiltBtn").textContent = "Use finger instead";
+  } catch (e) { console.warn(e); }
+};
+window.addEventListener("deviceorientation", (e) => {
+  if (!tilt || e.gamma == null) return;
+  sendX(0.5 + e.gamma / 50); // about 25 degrees either way reaches the edge
+});
+
+$("startBtn").onclick = () => link && link.send({ t: "start" });
+$("againBtn").onclick = () => link && link.send({ t: "start" });
+
+/* Lead capture: score and the GAME's URL (the big screen), not the controller URL */
+$("detailsBtn").onclick = () => {
+  const score = Math.max(0, Math.floor(last.score || 0));
+  const gameUrl = encodeURIComponent(last.gameUrl || window.location.href);
+  const formUrl = `${FORM.base}?${FORM.scoreField}=${encodeURIComponent(score)}&${FORM.urlField}=${gameUrl}`;
+  window.open(formUrl, "_blank");
+};
+
+/* Keep the phone screen awake while playing, where supported */
+(async () => { try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {} })();
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible") { try { await navigator.wakeLock.request("screen"); } catch (e) {} }
+});
+</script>
+</body>
+</html>

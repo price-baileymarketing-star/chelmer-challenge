@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chelmer Challenge | Price Bailey</title>
+<style>
+  /* =====================================================================
+     BRAND SETTINGS (TODO: confirm approved Price Bailey hex values)
+     ===================================================================== */
+  :root {
+    --pb-navy: #0b2341;      /* TODO: primary brand colour */
+    --pb-navy-2: #12325a;
+    --pb-accent: #e4007c;    /* TODO: accent brand colour */
+    --pb-teal: #0f8a8c;      /* TODO: confirm brand teal (boat cabin roof) */
+    --pb-good: #2fbf8f;
+    --pb-gold: #f5b82e;
+    --pb-risk: #ff5a4f;
+    --pb-white: #ffffff;
+    --pb-muted: #a9b8cc;
+    --font: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--pb-navy); color: var(--pb-white); font-family: var(--font); overflow: hidden; }
+  #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .hidden { display: none !important; }
+
+  /* ----- HUD: score and streak left, journey map centre, lives and time right ----- */
+  #hud { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 1.2vw; padding: 1.6vh 2vw;
+         pointer-events: none; font-weight: 700; font-size: clamp(15px, 2vw, 30px); }
+  #hud .pill { background: rgba(11,35,65,.82); border: 1px solid rgba(255,255,255,.18); padding: .3em .8em; border-radius: 999px; white-space: nowrap; }
+  #combo { color: var(--pb-gold); }
+  #journey { flex: 1; background: rgba(11,35,65,.82); border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: .45em 1.6em 1.25em; position: relative; }
+  #journey .track { position: relative; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); margin-top: .35em; }
+  #journey .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--pb-good); border-radius: 3px; }
+  #journey .stop { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; }
+  #journey .stop span { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: .45em; white-space: nowrap; color: var(--pb-muted); }
+  #journey .stop:first-child span { left: 0; transform: none; }
+  #journey .stop.last span { left: auto; right: 0; transform: none; }
+  #journey .marker { position: absolute; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--pb-accent); border: 3px solid #fff; }
+
+  /* ----- Overlay screens (semi-transparent so the river shows behind) ----- */
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(11,35,65,.80), rgba(11,35,65,.94)); }
+  .panel { width: min(1100px, 92vw); display: grid; grid-template-columns: 1.3fr 1fr; gap: 4vw; align-items: center; }
+  .logo { display: inline-flex; align-items: center; gap: .6em; font-weight: 800; letter-spacing: .02em; font-size: clamp(16px, 1.8vw, 24px); }
+  .logo img { height: clamp(40px, 6vh, 70px); }
+  .logo-fallback { background: var(--pb-white); color: var(--pb-navy); padding: .35em .6em; border-radius: 6px; } /* TODO: replace with approved logo */
+  .kicker { color: var(--pb-gold); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; font-size: clamp(13px, 1.3vw, 18px); margin-top: 1.2em; }
+  h1 { font-size: clamp(40px, 6.5vw, 96px); margin: .1em 0 .15em; line-height: 1; }
+  h1 span { color: var(--pb-accent); }
+  .lede { font-size: clamp(18px, 2vw, 28px); color: #d5deea; margin: 0 0 1em; max-width: 32ch; }
+  .rules { list-style: none; padding: 0; margin: 0 0 1.4em; font-size: clamp(16px, 1.6vw, 22px); display: grid; gap: .5em; }
+  .rules li { display: flex; align-items: center; }
+  .rules b { flex: none; display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; border-radius: 50%; margin-right: .5em; color: var(--pb-navy); }
+  .rules .g b { background: var(--pb-good); }
+  .rules .r b { background: var(--pb-risk); color: #fff; border-radius: 4px; transform: rotate(45deg) scale(.85); }
+  .rules .r b i { transform: rotate(-45deg); font-style: normal; }
+  .rules .l b { background: var(--pb-gold); }
+  .join { background: var(--pb-white); color: var(--pb-navy); border-radius: 20px; padding: 3vh 2vw; text-align: center; }
+  .join h2 { margin: 0 0 .4em; font-size: clamp(20px, 2.2vw, 32px); }
+  #qr svg { width: min(28vh, 260px); height: auto; display: block; margin: 0 auto; }
+  .code { font-size: clamp(28px, 3.6vw, 52px); font-weight: 800; letter-spacing: .25em; margin: .3em 0 0; }
+  .small { font-size: clamp(12px, 1.1vw, 15px); color: #4a5a70; margin-top: .4em; word-break: break-all; }
+  .status { display: inline-flex; align-items: center; gap: .5em; margin-top: .8em; font-weight: 700; font-size: clamp(14px, 1.4vw, 20px); }
+  .dot { width: .8em; height: .8em; border-radius: 50%; background: #999; }
+  .dot.ready { background: var(--pb-gold); } .dot.connected { background: var(--pb-good); } .dot.offline { background: var(--pb-risk); }
+  .keys { color: var(--pb-muted); font-size: clamp(13px, 1.2vw, 17px); margin-top: 1em; }
+  .btn { font: inherit; font-weight: 800; font-size: clamp(16px, 1.8vw, 24px); border: 0; border-radius: 999px; padding: .75em 1.6em; cursor: pointer; background: var(--pb-accent); color: #fff; }
+  .btn.secondary { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,.5); }
+  .btn:focus-visible { outline: 4px solid var(--pb-gold); outline-offset: 3px; }
+
+  /* End screen */
+  .end { text-align: center; }
+  .end .result { color: var(--pb-gold); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; font-size: clamp(14px, 1.6vw, 22px); margin-top: 1em; }
+  .end .big { font-size: clamp(64px, 10vw, 150px); font-weight: 800; line-height: 1; margin: .1em 0; }
+  .end .msg { font-size: clamp(20px, 2.4vw, 34px); margin: .3em 0 .4em; }
+  .end .hs { color: var(--pb-gold); font-weight: 700; font-size: clamp(16px, 1.8vw, 24px); }
+  .end .row { display: flex; gap: 1em; justify-content: center; flex-wrap: wrap; margin-top: 1.4em; }
+  .end .talk { color: var(--pb-muted); margin-top: 1.2em; font-size: clamp(14px, 1.5vw, 20px); }
+
+  #countdown { position: fixed; inset: 0; display: grid; place-items: center; font-size: 22vh; font-weight: 800; pointer-events: none; text-shadow: 0 6px 30px rgba(0,0,0,.4); }
+
+  @media (max-width: 760px) { .panel { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Chelmer Challenge game area"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="pill">Score <span id="score">0</span></div>
+  <div class="pill" id="combo">x1</div>
+  <div id="journey" aria-label="Journey progress">
+    <div class="track">
+      <div class="fill" id="journeyFill"></div>
+      <div class="stop" style="left:0%"><span>City centre</span></div>
+      <div class="stop" style="left:33.3%"><span>Springfield Basin</span></div>
+      <div class="stop" style="left:66.6%"><span>Essex countryside</span></div>
+      <div class="stop last" style="left:100%"><span>Heybridge Basin</span></div>
+      <div class="marker" id="journeyMarker"></div>
+    </div>
+  </div>
+  <div class="pill">Lives <span id="lives">3</span></div>
+  <div class="pill"><span id="time">60</span>s</div>
+</div>
+
+<!-- TITLE / LOBBY -->
+<div id="title" class="screen">
+  <div class="panel">
+    <div>
+      <!-- TODO: add approved logo at assets/logo.png. Text fallback shows until then. -->
+      <div class="logo"><img src="assets/logo.png" alt="Price Bailey" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'logo-fallback',textContent:'Price Bailey'}))"></div>
+      <div class="kicker">A river cruise through Chelmsford</div>
+      <h1>Chelmer <span>Challenge</span></h1>
+      <p class="lede">Steer the Price Bailey cruise boat from the city centre to Heybridge Basin in 60 seconds.</p>
+      <ul class="rules">
+        <li class="g"><b>+</b>Collect funding, new clients and R&amp;D wins.</li>
+        <li class="r"><b><i>!</i></b>Avoid missed deadlines, data gaps and cash squeezes.</li>
+        <li class="l"><b>&#8593;</b>Steer through the gap in each lock gate for a bonus.</li>
+      </ul>
+      <button class="btn" id="startBtn">Start cruise</button>
+      <div class="keys">No phone? Use the arrow keys or mouse, then press Space to start.</div>
+    </div>
+    <div class="join">
+      <h2>Scan to steer</h2>
+      <div id="qr" aria-label="QR code to open the controller"></div>
+      <div class="code" id="roomCode">----</div>
+      <div class="small" id="ctrlUrl"></div>
+      <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connecting…</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- END SCREEN -->
+<div id="end" class="screen hidden">
+  <div class="end">
+    <div class="logo"><span class="logo-fallback">Price Bailey</span></div>
+    <div class="result" id="endResult"></div>
+    <div class="big" id="finalScore">0</div>
+    <div class="msg" id="endMsg"></div>
+    <div class="hs" id="highScore"></div>
+    <div class="row">
+      <button class="btn" id="detailsBtn">Leave your details</button>
+      <button class="btn secondary" id="againBtn">Play again</button>
+    </div>
+    <div class="talk">Your phone has the same options. Ask the Price Bailey team how we help Chelmsford businesses grow.</div>
+  </div>
+</div>
+
+<div id="countdown" class="hidden"></div>
+
+<script src="lib/qrcode.js"></script>
+<script src="lib/link.js"></script>
+<script>
+"use strict";
+/* =========================================================================
+   GAME CONFIG: tweak balance and copy here
+   ========================================================================= */
+const CONFIG = {
+  roundSeconds: 60,
+  stageSeconds: 20,          // three stages of 20 seconds
+  lives: 3,
+  baseSpeed: 0.30,           // river speed in screen heights per second at start
+  speedGrowth: 0.0035,       // extra speed per second played
+  baseSpawn: 0.85,           // seconds between floating items at start
+  minSpawn: 0.38,
+  riskChance: [0.28, 0.36, 0.45],   // per stage
+  lockGap: [0.40, 0.31, 0.24],      // gap width as a share of the river, per stage
+  lockBonus: [50, 75, 100],         // points for passing each lock
+  lockTimes: [16, 36, 55],          // when each lock gate appears (seconds)
+  finishBonus: 100,
+  maxCombo: 5,
+  comboStep: 4,              // catches per multiplier step
+  formBase: "https://www.pricebailey.co.uk/enquiry-form/game/",
+  scoreField: "wpf72332_23",
+  urlField: "wpf72332_31",   // TODO: confirm _31 vs _30 for this form
+  highScoreKey: "pb-chelmer-high"
+};
+
+/* Floating items. Labels kept short so they read from a distance. */
+const GOOD = [
+  { label: "Funding", pts: 10 },
+  { label: "New client", pts: 10 },
+  { label: "R&D win", pts: 15 },
+  { label: "Cash flow", pts: 10 },
+  { label: "Efficiency", pts: 10 }
+];
+const BONUS = { label: "PB advice", pts: 30 };   // rare gold item
+const RISKS = [
+  { label: "Missed deadline" },
+  { label: "Data gap" },
+  { label: "Cash squeeze" },
+  { label: "Cyber risk" }
+];
+
+/* Stage names (also shown on the journey map) */
+const STAGES = ["City centre", "Springfield Basin", "Essex countryside"];
+
+/* Landmarks along the route: time (s), drawing, bank side.
+   TODO: route order is simplified for gameplay. Ask a local to sense-check. */
+const LANDMARKS = [
+  { t: 1.0,  kind: "cathedral",   side: "L" },
+  { t: 6.0,  kind: "shirehall",   side: "R" },
+  { t: 11.0, kind: "marconi",     side: "L" },
+  { t: 15.2, kind: "cottage",     side: "R" },
+  { t: 21.0, kind: "springfield", side: "R" },
+  { t: 25.5, kind: "moored",      side: "L" },
+  { t: 31.0, kind: "moored",      side: "R" },
+  { t: 35.2, kind: "cottage",     side: "L" },
+  { t: 44.0, kind: "barn",        side: "R" },
+  { t: 54.6, kind: "heybridge",   side: "L" },
+  { t: 54.6, kind: "barge",       side: "R" }
+];
+/* Landmark labels shown on screen. Generic scenery has no label. */
+const LABELS = {
+  cathedral: "Chelmsford Cathedral",
+  shirehall: "Shire Hall",
+  marconi: "Marconi works",
+  springfield: "Springfield Basin",
+  heybridge: "Heybridge Basin"
+};
+/* Attract loop on the title screen */
+const TITLE_LOOP = ["cathedral", "shirehall", "marconi", "springfield", "heybridge"];
+
+/* Scenery colours */
+const C = {
+  water1: "#2b7aa6", water2: "#1f5f87", ripple: "rgba(255,255,255,0.16)",
+  grass: "#6e9f4a", grassDark: "#5d8b3d", field1: "#8cb35a", field2: "#7aa24c",
+  paving: "#cbbfa6", pavingLine: "#b6a98e", stoneEdge: "#9aa0a6", towpath: "#d9c79e",
+  stone: "#ece2c9", stoneShade: "#d3c6a6", roofGrey: "#5f6670", brick: "#a9533c", brickDark: "#86402e",
+  tree: "#3f7a34", treeLight: "#56963f", wood: "#7a5230", woodDark: "#553820"
+};
+
+/* =========================================================================
+   SETUP
+   ========================================================================= */
+const $ = (id) => document.getElementById(id);
+const cv = $("game"), ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+let RL = 0, RR = 0, RW = 0, BW = 0;   // river left, right, width, bank width (px)
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const bankFrac = W / H > 1.2 ? 0.24 : 0.15;
+  BW = W * bankFrac; RL = BW; RR = W - BW; RW = RR - RL;
+}
+window.addEventListener("resize", resize); resize();
+
+let highScore = 0;
+try { highScore = parseInt(localStorage.getItem(CONFIG.highScoreKey), 10) || 0; } catch (e) {}
+
+/* Game state. All y positions are in screen heights (0 top, 1 bottom). */
+const G = {
+  state: "title",  // title | countdown | playing | end
+  score: 0, lives: CONFIG.lives, time: CONFIG.roundSeconds,
+  streak: 0, mult: 1, elapsed: 0, spawnT: 0, stage: 0,
+  x: 0.5, targetX: 0.5, lean: 0,       // boat position across the river 0..1
+  items: [], gates: [], scenery: [], tiles: [],
+  parts: [], pops: [], banner: null,
+  shake: 0, flash: 0, won: false,
+  flow: 0, nextLandmark: 0, gatesDone: 0, titleT: 0, titleIdx: 0,
+  decorDist: { L: 0, R: 0 }, block: { L: 0, R: 0 }, reedDist: 0
+};
+
+/* =========================================================================
+   CONNECTION (room code + QR)
+   ========================================================================= */
+let link, roomCode;
+function controllerUrl(code) { return new URL("controller/?room=" + code, window.location.href).href; }
+function setStatus(s) {
+  const map = { ready: ["ready", "Waiting for controller"], connected: ["connected", "Controller connected"],
+                offline: ["offline", "Online link unavailable. Keyboard and same-browser test still work"],
+                reconnecting: ["ready", "Reconnecting…"] };
+  const m = map[s] || ["", s];
+  $("statusDot").className = "dot " + m[0];
+  $("statusText").textContent = m[1];
+}
+function openRoom() {
+  if (link) link.destroy();
+  roomCode = GPLink.makeCode();
+  const url = controllerUrl(roomCode);
+  $("roomCode").textContent = roomCode;
+  $("ctrlUrl").textContent = url;
+  const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+  $("qr").innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+  link = GPLink.createHost(roomCode, {
+    onStatus: setStatus,
+    onCodeTaken: openRoom,
+    onConnect: () => broadcastState(),
+    onMessage: handleMessage
+  });
+}
+openRoom();
+
+/* Controller -> display messages */
+function handleMessage(msg) {
+  if (!msg || !msg.t) return;
+  if (msg.t === "pos") G.targetX = Math.max(0, Math.min(1, +msg.x || 0));
+  else if (msg.t === "start" && (G.state === "title" || G.state === "end")) startCountdown();
+  else if (msg.t === "hello") broadcastState();
+}
+
+/* Display -> controller state updates */
+function broadcastState() {
+  if (!link) return;
+  link.send({ t: "state", state: G.state, score: Math.floor(G.score), high: highScore,
+              lives: G.lives, time: Math.ceil(G.time), gameUrl: window.location.href,
+              msg: G.state === "end" ? endMessage() : "" });
+}
+
+/* =========================================================================
+   FLOW
+   ========================================================================= */
+function startCountdown() {
+  Object.assign(G, { state: "countdown", score: 0, lives: CONFIG.lives, time: CONFIG.roundSeconds,
+    streak: 0, mult: 1, elapsed: 0, spawnT: 0.6, stage: 0, items: [], gates: [], parts: [], pops: [],
+    won: false, nextLandmark: 0, gatesDone: 0, banner: null, x: 0.5, targetX: 0.5 });
+  // Clear title-loop landmarks so the cruise starts with a clean city scene
+  G.scenery = G.scenery.filter((s) => s.kind !== "landmark");
+  $("title").classList.add("hidden"); $("end").classList.add("hidden");
+  $("hud").classList.remove("hidden");
+  updateHud();
+  broadcastState();
+  const cd = $("countdown"); cd.classList.remove("hidden");
+  let n = 3; cd.textContent = n;
+  const iv = setInterval(() => {
+    n--;
+    if (n > 0) cd.textContent = n;
+    else if (n === 0) cd.textContent = "Go";
+    else {
+      clearInterval(iv); cd.classList.add("hidden"); G.state = "playing";
+      showBanner("Stage 1: " + STAGES[0]);
+      broadcastState();
+    }
+  }, 700);
+}
+
+function endGame(won) {
+  G.state = "end"; G.won = won;
+  if (won) {
+    G.score += CONFIG.finishBonus;
+  }
+  const s = Math.floor(G.score);
+  const isBest = s > highScore;
+  if (isBest) { highScore = s; try { localStorage.setItem(CONFIG.highScoreKey, String(s)); } catch (e) {} }
+  $("endResult").textContent = won ? "You reached Heybridge Basin" : "Cruise ended at " + STAGES[G.stage];
+  $("finalScore").textContent = s;
+  $("highScore").textContent = isBest ? "New high score" : "High score: " + highScore;
+  $("endMsg").textContent = endMessage();
+  $("hud").classList.add("hidden");
+  $("end").classList.remove("hidden");
+  $("detailsBtn").focus();
+  broadcastState();
+}
+
+function endMessage() {
+  const s = G.score;
+  if (!G.won) return "Your cruise ended early. A clear plan helps you spot risks sooner.";
+  if (s >= 800) return "Outstanding. That is a business built to scale.";
+  if (s >= 500) return "Strong growth with risks well managed.";
+  return "A steady journey. There is room to grow further.";
+}
+
+/* Lead capture: opens Price Bailey enquiry form with score and game URL */
+function openForm() {
+  const score = Math.max(0, Math.floor(G.score));
+  const gameUrl = encodeURIComponent(window.location.href);
+  const formUrl = `${CONFIG.formBase}?${CONFIG.scoreField}=${encodeURIComponent(score)}&${CONFIG.urlField}=${gameUrl}`;
+  window.open(formUrl, "_blank");
+}
+
+$("startBtn").onclick = startCountdown;
+$("againBtn").onclick = startCountdown;
+$("detailsBtn").onclick = openForm;
+
+/* Keyboard and mouse fallback */
+const keys = {};
+window.addEventListener("keydown", (e) => {
+  keys[e.key] = true;
+  if ((e.key === " " || e.key === "Enter") && (G.state === "title")) { e.preventDefault(); startCountdown(); }
+});
+window.addEventListener("keyup", (e) => { keys[e.key] = false; });
+cv.addEventListener("pointermove", (e) => { if (G.state === "playing") G.targetX = (e.clientX - RL) / RW; });
+
+/* =========================================================================
+   GAMEPLAY
+   ========================================================================= */
+function speed() { return G.state === "playing" ? CONFIG.baseSpeed + CONFIG.speedGrowth * G.elapsed : 0.14; }
+function itemR() { return Math.max(24, Math.min(W, H) * 0.045); }
+function boatW() { return Math.max(64, RW * 0.13); }
+function boatL() { return Math.min(boatW() * 2.1, H * 0.23); }
+function boatCY() { return H * 0.80; }
+function boatPX() { const m = boatW() / 2 + 6; return RL + m + G.x * (RW - 2 * m); }
+function itemPX(f) { const m = itemR() * 1.2; return RL + m + f * (RW - 2 * m); }
+
+function spawnItem() {
+  const st = G.stage;
+  let def, kind;
+  if (Math.random() < 0.05) { def = BONUS; kind = "bonus"; }
+  else if (Math.random() < CONFIG.riskChance[st]) { def = RISKS[Math.floor(Math.random() * RISKS.length)]; kind = "risk"; }
+  else { def = GOOD[Math.floor(Math.random() * GOOD.length)]; kind = "good"; }
+  G.items.push({ f: Math.random(), y: -0.06, def, kind, bob: Math.random() * 6.28 });
+}
+
+function spawnGate(i) {
+  const gw = CONFIG.lockGap[i];
+  G.gates.push({ y: -0.05, gw, gx: gw / 2 + 0.05 + Math.random() * (0.9 - gw), idx: i, done: false });
+}
+
+function spawnLandmark(kind, side) {
+  G.scenery.push({ kind: "landmark", type: kind, side, y: -0.36, fx: 0.5 });
+  G.block[side] = 0.62;   // keep generic scenery away while the landmark passes
+}
+
+function burst(px, py, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.28, sp = 80 + Math.random() * 260;
+    G.parts.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80, life: 0.7, max: 0.7, color });
+  }
+}
+function pop(px, py, text, color) { G.pops.push({ x: px, y: py, text, color, life: 1.1 }); }
+function showBanner(text) { G.banner = { text, life: 2.4 }; }
+
+/* Generic bank scenery, depends on the stage theme */
+function themeNow() { return G.state === "playing" || G.state === "end" ? G.stage : 0; }
+function spawnDecor(side, dist) {
+  const th = themeNow();
+  const pool = th === 0 ? ["house", "house", "tree", "lamp", "tree"]
+             : th === 1 ? ["tree", "tree", "house", "bush", "bench"]
+             :            ["tree", "bale", "bush", "tree", "bale"];
+  const type = pool[Math.floor(Math.random() * pool.length)];
+  G.scenery.push({ kind: "decor", type, side, y: -0.12 - dist, fx: 0.18 + Math.random() * 0.64, s: 0.8 + Math.random() * 0.4,
+                   hue: Math.floor(Math.random() * 4) });
+}
+
+function update(dt) {
+  // Boat movement: keyboard nudges target, smoothing gives a pleasant glide
+  if (keys.ArrowLeft || keys.a || keys.A) G.targetX -= 1.3 * dt;
+  if (keys.ArrowRight || keys.d || keys.D) G.targetX += 1.3 * dt;
+  G.targetX = Math.max(0, Math.min(1, G.targetX));
+  const prevX = G.x;
+  G.x += (G.targetX - G.x) * Math.min(1, dt * 10);
+  const vx = dt > 0 ? (G.x - prevX) / dt : 0;
+  G.lean += (Math.max(-0.28, Math.min(0.28, vx * 0.35)) - G.lean) * Math.min(1, dt * 8);
+
+  // Effects always animate
+  for (const p of G.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; p.life -= dt; }
+  G.parts = G.parts.filter((p) => p.life > 0);
+  for (const p of G.pops) { p.y -= 60 * dt; p.life -= dt; }
+  G.pops = G.pops.filter((p) => p.life > 0);
+  if (G.banner) { G.banner.life -= dt; if (G.banner.life <= 0) G.banner = null; }
+  G.shake = Math.max(0, G.shake - dt * 2.5);
+  G.flash = Math.max(0, G.flash - dt * 3);
+
+  // World scroll: everything on the river and banks moves down together
+  const v = G.state === "end" ? 0.05 : speed();
+  const dy = v * dt;
+  G.flow += dy;
+  scrollWorld(dy);
+
+  // Title attract loop: landmarks drift past while waiting for a player
+  if (G.state === "title") {
+    G.titleT -= dt;
+    if (G.titleT <= 0) {
+      G.titleT = 4.2;
+      spawnLandmark(TITLE_LOOP[G.titleIdx % TITLE_LOOP.length], G.titleIdx % 2 ? "R" : "L");
+      G.titleIdx++;
+    }
+  }
+
+  if (G.state !== "playing") return;
+
+  G.elapsed += dt; G.time -= dt;
+
+  // Stage changes
+  const st = Math.min(2, Math.floor(G.elapsed / CONFIG.stageSeconds));
+  if (st !== G.stage) { G.stage = st; showBanner("Stage " + (st + 1) + ": " + STAGES[st]); }
+
+  // Scheduled landmarks and lock gates
+  while (G.nextLandmark < LANDMARKS.length && G.elapsed >= LANDMARKS[G.nextLandmark].t) {
+    const lm = LANDMARKS[G.nextLandmark++];
+    spawnLandmark(lm.type || lm.kind, lm.side);
+  }
+  CONFIG.lockTimes.forEach((t, i) => { if (G.gatesDone === i && G.elapsed >= t) { spawnGate(i); G.gatesDone++; } });
+
+  if (G.time <= 0) { G.time = 0; updateHud(); endGame(true); return; }
+
+  // Floating items (paused briefly while a lock gate approaches, to keep the run-up clear)
+  G.spawnT -= dt;
+  const gateNear = G.gates.some((g) => !g.done && g.y < 0.42);
+  if (G.spawnT <= 0 && !gateNear) {
+    spawnItem();
+    G.spawnT = Math.max(CONFIG.minSpawn, CONFIG.baseSpawn - G.elapsed * 0.009);
+  }
+
+  // Collisions with the boat (hull treated as a rectangle)
+  const bx = boatPX(), bw = boatW(), bl = boatL(), by = boatCY();
+  const r = itemR();
+  for (const it of G.items) {
+    it.bob += dt * 3;
+    const ix = itemPX(it.f), iy = it.y * H;
+    if (!it.done && Math.abs(ix - bx) < bw / 2 + r * 0.75 && Math.abs(iy - by) < bl / 2 + r * 0.6) {
+      it.done = true; collide(it, ix, iy);
+    }
+    if (it.y > 1.1) it.done = true;
+  }
+  G.items = G.items.filter((it) => !it.done);
+
+  // Lock gates: checked when the gate reaches the bow
+  for (const g of G.gates) {
+    if (!g.done && g.y * H >= by - bl / 2) {
+      g.done = true;
+      const half = (g.gw * RW) / 2;
+      const gapCentre = RL + g.gx * RW;
+      const ok = Math.abs(bx - gapCentre) <= half - bw * 0.3;
+      if (ok) {
+        const pts = CONFIG.lockBonus[g.idx];
+        G.score += pts; g.passed = true;
+        burst(bx, by - bl / 2, getCss("--pb-gold"), 40);
+        pop(bx, by - bl / 2 - 20, "Checkpoint passed +" + pts, getCss("--pb-gold"));
+      } else {
+        G.streak = 0; G.mult = 1; G.shake = 0.6;
+        burst(bx, by - bl / 2, "#c9a27a", 22);
+        pop(bx, by - bl / 2 - 20, "Clipped the lock", "#ffd7b0");
+      }
+    }
+  }
+
+  // Throttled state updates to the phone (about 4 per second)
+  G.syncT = (G.syncT || 0) - dt;
+  if (G.syncT <= 0) { G.syncT = 0.25; broadcastState(); }
+  updateHud();
+}
+
+function scrollWorld(dy) {
+  for (const it of G.items) it.y += dy;
+  for (const g of G.gates) g.y += dy;
+  for (const s of G.scenery) s.y += dy;
+  G.gates = G.gates.filter((g) => g.y < 1.2);
+  G.scenery = G.scenery.filter((s) => s.y < 1.5);
+
+  // Bank background tiles (theme scrolls in smoothly when the stage changes)
+  for (const t of G.tiles) t.y += dy;
+  G.tiles = G.tiles.filter((t) => t.y < 1.05);
+  if (!G.tiles.length) G.tiles.push({ y: 1.0 - 0.25, th: themeNow() });
+  while (G.tiles[G.tiles.length - 1].y > -0.25) {
+    const top = G.tiles[G.tiles.length - 1].y;
+    G.tiles.push({ y: top - 0.25, th: themeNow() });
+  }
+
+  // Generic scenery spawner per bank
+  for (const side of ["L", "R"]) {
+    G.block[side] = Math.max(0, G.block[side] - dy);
+    G.decorDist[side] -= dy;
+    if (G.decorDist[side] <= 0) {
+      G.decorDist[side] = 0.09 + Math.random() * 0.08;
+      if (G.block[side] <= 0) spawnDecor(side, 0);
+    }
+  }
+  // Reeds along the water's edge
+  G.reedDist -= dy;
+  if (G.reedDist <= 0) {
+    G.reedDist = 0.05 + Math.random() * 0.06;
+    G.scenery.push({ kind: "reed", side: Math.random() < 0.5 ? "L" : "R", y: -0.05, fx: 0, s: 0.7 + Math.random() * 0.6 });
+  }
+}
+
+function collide(it, px, py) {
+  if (it.kind === "risk") {
+    G.lives--; G.streak = 0; G.mult = 1; G.shake = 1; G.flash = 1;
+    burst(px, py, getCss("--pb-risk"), 26);
+    pop(px, py, it.def.label, getCss("--pb-risk"));
+    if (G.lives <= 0) { updateHud(); endGame(false); }
+  } else {
+    G.streak++;
+    G.mult = Math.min(CONFIG.maxCombo, 1 + Math.floor(G.streak / CONFIG.comboStep));
+    const pts = it.def.pts * G.mult;
+    G.score += pts;
+    burst(px, py, it.kind === "bonus" ? getCss("--pb-gold") : getCss("--pb-good"), it.kind === "bonus" ? 34 : 18);
+    pop(px, py, "+" + pts, it.kind === "bonus" ? getCss("--pb-gold") : "#fff");
+  }
+}
+
+function updateHud() {
+  $("score").textContent = Math.floor(G.score);
+  $("lives").textContent = G.lives;
+  $("time").textContent = Math.ceil(G.time);
+  $("combo").textContent = "x" + G.mult;
+  const p = Math.min(100, (G.elapsed / CONFIG.roundSeconds) * 100);
+  $("journeyFill").style.width = p + "%";
+  $("journeyMarker").style.left = p + "%";
+}
+
+/* =========================================================================
+   RENDERING HELPERS
+   ========================================================================= */
+const cssCache = {};
+function getCss(v) { return cssCache[v] || (cssCache[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim()); }
+function rr(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rect(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
+function circle(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill(); }
+function poly(pts, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]); ctx.closePath(); ctx.fill(); }
+function frac(n) { return n - Math.floor(n); }
+
+/* Label pill used under named landmarks */
+function label(text, x, y) {
+  const fs = Math.max(13, H * 0.02);
+  ctx.font = `700 ${fs}px ${getCss("--font")}`;
+  const w = ctx.measureText(text).width + fs * 1.2;
+  ctx.fillStyle = "rgba(11,35,65,0.85)"; rr(x - w / 2, y - fs * 0.85, w, fs * 1.7, fs * 0.85); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, x, y + 1);
+}
+
+/* =========================================================================
+   BANKS AND RIVER
+   ========================================================================= */
+function drawBanks() {
+  for (const t of G.tiles) {
+    const y = t.y * H, h = 0.25 * H + 1;
+    for (const [x0, x1] of [[0, RL], [RR, W]]) {
+      if (t.th === 2) {
+        // Countryside: striped fields
+        const n = 4;
+        for (let i = 0; i < n; i++) rect(x0 + (x1 - x0) * i / n, y, (x1 - x0) / n + 1, h, i % 2 ? C.field1 : C.field2);
+      } else {
+        rect(x0, y, x1 - x0, h, t.th === 0 ? "#78a552" : C.grass);
+      }
+    }
+    // City centre: paved riverside walk
+    if (t.th === 0) {
+      const pw = BW * 0.16;
+      rect(RL - pw, y, pw, h, C.paving); rect(RR, y, pw, h, C.paving);
+      ctx.strokeStyle = C.pavingLine; ctx.lineWidth = 1;
+      for (let k = 0; k < 5; k++) {
+        const yy = y + k * h / 5;
+        ctx.beginPath(); ctx.moveTo(RL - pw, yy); ctx.lineTo(RL, yy); ctx.moveTo(RR, yy); ctx.lineTo(RR + pw, yy); ctx.stroke();
+      }
+    } else {
+      // Towpath along the Navigation
+      const tw = BW * 0.08;
+      rect(RL - tw * 1.6, y, tw, h, C.towpath); rect(RR + tw * 0.6, y, tw, h, C.towpath);
+    }
+  }
+}
+
+function drawRiver() {
+  const g = ctx.createLinearGradient(RL, 0, RR, 0);
+  g.addColorStop(0, C.water2); g.addColorStop(0.5, C.water1); g.addColorStop(1, C.water2);
+  ctx.fillStyle = g; ctx.fillRect(RL, 0, RW, H);
+  // Flowing ripples
+  ctx.strokeStyle = C.ripple; ctx.lineWidth = 2; ctx.lineCap = "round";
+  for (let i = 0; i < 46; i++) {
+    const x = RL + 12 + frac(i * 0.6180339) * (RW - 24);
+    const y = (frac(i * 0.3719 + G.flow * (0.9 + (i % 3) * 0.08)) * 1.15 - 0.075) * H;
+    const len = 14 + (i % 4) * 8;
+    ctx.beginPath(); ctx.moveTo(x - len / 2, y); ctx.quadraticCurveTo(x, y - 4, x + len / 2, y); ctx.stroke();
+  }
+  // Stone edges
+  rect(RL - 5, 0, 6, H, C.stoneEdge); rect(RR - 1, 0, 6, H, C.stoneEdge);
+}
+
+/* =========================================================================
+   SCENERY DRAWINGS (original simplified illustrations, not traced images)
+   Each is drawn around (cx, cy) with u = one unit (bank width / 200).
+   ========================================================================= */
+function bankCX(side, fx) { return side === "L" ? fx * RL : RR + fx * (W - RR); }
+
+function drawTree(x, y, s) {
+  circle(x + 4 * s, y + 6 * s, 20 * s, "rgba(0,0,0,0.15)");
+  circle(x, y, 20 * s, C.tree); circle(x - 7 * s, y - 6 * s, 12 * s, C.treeLight); circle(x + 8 * s, y + 2 * s, 11 * s, C.treeLight);
+}
+function drawHouse(x, y, s, hue) {
+  const walls = ["#efe3cf", "#e6d2b5", "#d9c3a5", "#f2ece0"][hue];
+  const roofs = ["#9b4f3a", "#6c5145", "#8a3e2e", "#5f6670"][hue];
+  rect(x - 22 * s, y - 8 * s, 44 * s, 26 * s, walls);
+  poly([x - 26 * s, y - 8 * s, x, y - 26 * s, x + 26 * s, y - 8 * s], roofs);
+  rect(x + 10 * s, y - 28 * s, 6 * s, 12 * s, roofs);
+  rect(x - 15 * s, y - 2 * s, 8 * s, 8 * s, "#7fa7c4"); rect(x + 7 * s, y - 2 * s, 8 * s, 8 * s, "#7fa7c4");
+  rect(x - 4 * s, y + 6 * s, 8 * s, 12 * s, "#4a3a32");
+}
+function drawLamp(x, y, s) { rect(x - 1.5 * s, y - 24 * s, 3 * s, 30 * s, "#2e3a46"); circle(x, y - 26 * s, 5 * s, "#ffe9a8"); }
+function drawBush(x, y, s) { circle(x, y, 12 * s, C.grassDark); circle(x + 9 * s, y + 2 * s, 9 * s, C.tree); }
+function drawBale(x, y, s) { circle(x, y, 10 * s, "#e3c25e"); ctx.strokeStyle = "#c9a646"; ctx.lineWidth = 2 * s; ctx.beginPath(); ctx.arc(x, y, 6 * s, 0, 6.28); ctx.stroke(); }
+function drawBench(x, y, s) { rect(x - 14 * s, y - 3 * s, 28 * s, 6 * s, C.wood); rect(x - 12 * s, y + 3 * s, 3 * s, 6 * s, C.woodDark); rect(x + 9 * s, y + 3 * s, 3 * s, 6 * s, C.woodDark); }
+function drawReed(side, y) {
+  const x = side === "L" ? RL - 10 : RR + 10;
+  ctx.strokeStyle = "#4f7f35"; ctx.lineWidth = 2;
+  for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(x + k * 3, y); ctx.lineTo(x + k * 5, y - 14 - Math.abs(k) * -2); ctx.stroke(); }
+}
+
+function drawLandmark(type, cx, cy, u) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const t = performance.now() / 1000;
+  switch (type) {
+    case "cathedral": {
+      // Nave with tall windows, tower with lantern and slender spire
+      ctx.fillStyle = "rgba(0,0,0,0.15)"; rr(-78 * u, -24 * u, 168 * u, 84 * u, 6 * u); ctx.fill();
+      rect(-85 * u, -30 * u, 120 * u, 70 * u, C.stone);
+      poly([-89 * u, -30 * u, -25 * u, -62 * u, 39 * u, -30 * u], C.roofGrey);
+      for (let i = 0; i < 4; i++) { rr((-75 + i * 26) * u, -18 * u, 10 * u, 26 * u, 5 * u); ctx.fillStyle = "#5b6f86"; ctx.fill(); }
+      rect(35 * u, -70 * u, 44 * u, 110 * u, C.stone);
+      rect(35 * u, -70 * u, 44 * u, 8 * u, C.stoneShade);
+      rr(49 * u, -50 * u, 16 * u, 30 * u, 8 * u); ctx.fillStyle = "#5b6f86"; ctx.fill();
+      rect(50 * u, -88 * u, 14 * u, 18 * u, "#7d8a8f");                 // lantern
+      poly([50 * u, -88 * u, 57 * u, -150 * u, 64 * u, -88 * u], "#6b7a80");   // spire
+      rect(56 * u, -158 * u, 2 * u, 10 * u, "#d2b04c");
+      rect(-85 * u, 34 * u, 164 * u, 6 * u, C.stoneShade);
+      label(LABELS.cathedral, 0, 62 * u);
+      break;
+    }
+    case "shirehall": {
+      // Georgian civic building with four columns and a pediment
+      ctx.fillStyle = "rgba(0,0,0,0.15)"; rr(-84 * u, -40 * u, 176 * u, 92 * u, 6 * u); ctx.fill();
+      rect(-90 * u, -46 * u, 180 * u, 90 * u, C.stone);
+      rect(-90 * u, -50 * u, 180 * u, 6 * u, C.stoneShade);
+      poly([-40 * u, -50 * u, 0, -72 * u, 40 * u, -50 * u], C.stoneShade);
+      for (let i = 0; i < 4; i++) rect((-34 + i * 21) * u, -44 * u, 7 * u, 54 * u, "#fbf7ee");
+      for (let r = 0; r < 3; r++) for (let i = 0; i < 2; i++) {
+        rect((-80 + i * 22) * u, (-36 + r * 24) * u, 12 * u, 16 * u, "#5b6f86");
+        rect((48 + i * 22) * u, (-36 + r * 24) * u, 12 * u, 16 * u, "#5b6f86");
+      }
+      rect(-10 * u, 14 * u, 20 * u, 30 * u, "#4a3a32");
+      rect(-95 * u, 44 * u, 190 * u, 6 * u, C.stoneShade);
+      label(LABELS.shirehall, 0, 70 * u);
+      break;
+    }
+    case "marconi": {
+      // Brick works with a lattice radio mast sending out signal rings
+      ctx.fillStyle = "rgba(0,0,0,0.15)"; rr(-86 * u, -20 * u, 150 * u, 64 * u, 6 * u); ctx.fill();
+      rect(-92 * u, -26 * u, 142 * u, 64 * u, C.brick);
+      rect(-92 * u, -32 * u, 142 * u, 8 * u, C.brickDark);
+      for (let r = 0; r < 2; r++) for (let i = 0; i < 5; i++) rect((-84 + i * 27) * u, (-16 + r * 24) * u, 16 * u, 14 * u, "#f3d9a4");
+      // mast
+      ctx.strokeStyle = "#3a3f46"; ctx.lineWidth = 2.5 * u;
+      ctx.beginPath(); ctx.moveTo(62 * u, 38 * u); ctx.lineTo(74 * u, -140 * u); ctx.lineTo(86 * u, 38 * u); ctx.stroke();
+      for (let k = 0; k < 8; k++) {
+        const y1 = 38 - k * 22, y2 = y1 - 22;
+        const w1 = 12 * (1 - (38 - y1) / 178), w2 = 12 * (1 - (38 - y2) / 178);
+        ctx.beginPath(); ctx.moveTo((74 - w1) * u, y1 * u); ctx.lineTo((74 + w2) * u, y2 * u); ctx.stroke();
+      }
+      // signal rings
+      for (let k = 0; k < 3; k++) {
+        const p = frac(t * 0.6 + k / 3);
+        ctx.strokeStyle = `rgba(245,184,46,${0.9 * (1 - p)})`; ctx.lineWidth = 3 * u;
+        ctx.beginPath(); ctx.arc(74 * u, -140 * u, (10 + p * 50) * u, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+      }
+      circle(74 * u, -142 * u, 4 * u, getCss("--pb-gold"));
+      label(LABELS.marconi, -20 * u, 64 * u);
+      break;
+    }
+    case "springfield": {
+      // Basin of water with moored boats and mooring posts
+      ctx.fillStyle = C.stoneEdge; rr(-88 * u, -56 * u, 176 * u, 112 * u, 12 * u); ctx.fill();
+      ctx.fillStyle = C.water1; rr(-82 * u, -50 * u, 164 * u, 100 * u, 10 * u); ctx.fill();
+      drawMooredBoat(-50 * u, -4 * u, u, "#2f6b4f");
+      drawMooredBoat(-10 * u, 4 * u, u, "#8a2f3a");
+      drawMooredBoat(32 * u, -6 * u, u, "#2b4c7e");
+      for (let i = 0; i < 5; i++) rect((-76 + i * 38) * u, 44 * u, 5 * u, 5 * u, C.woodDark);
+      label(LABELS.springfield, 0, 76 * u);
+      break;
+    }
+    case "moored": {
+      // Narrowboats moored along the bank
+      drawMooredBoat(-28 * u, 0, u * 1.1, "#2f6b4f");
+      drawMooredBoat(22 * u, 10 * u, u * 1.1, "#7e2f3d");
+      break;
+    }
+    case "cottage": {
+      // Lock keeper style cottage
+      drawTree(-60 * u, -10 * u, u * 1.3);
+      rect(-30 * u, -24 * u, 70 * u, 46 * u, "#f4efe4");
+      poly([-36 * u, -24 * u, 5 * u, -54 * u, 46 * u, -24 * u], "#8a3e2e");
+      rect(22 * u, -58 * u, 9 * u, 20 * u, "#8a3e2e");
+      rect(-20 * u, -12 * u, 14 * u, 12 * u, "#7fa7c4"); rect(16 * u, -12 * u, 14 * u, 12 * u, "#7fa7c4");
+      rect(-2 * u, 4 * u, 12 * u, 18 * u, "#2f4f3a");
+      break;
+    }
+    case "barn": {
+      rect(-50 * u, -30 * u, 90 * u, 56 * u, "#8b3a2f");
+      poly([-56 * u, -30 * u, -5 * u, -60 * u, 46 * u, -30 * u], "#4b4f55");
+      rect(-18 * u, -4 * u, 26 * u, 30 * u, "#5a2620");
+      drawBale(60 * u, 10 * u, u * 1.4); drawBale(70 * u, 32 * u, u * 1.4);
+      break;
+    }
+    case "heybridge": {
+      // Row of waterside cottages at the basin, with the sea lock beyond
+      ctx.fillStyle = C.water1; rr(-90 * u, 18 * u, 180 * u, 42 * u, 8 * u); ctx.fill();
+      const cols = ["#f4efe4", "#efe0c4", "#e9d6c0", "#f4efe4"];
+      for (let i = 0; i < 4; i++) {
+        const x = (-84 + i * 42) * u;
+        rect(x, -30 * u, 40 * u, 44 * u, cols[i]);
+        poly([x - 3 * u, -30 * u, x + 20 * u, -50 * u, x + 43 * u, -30 * u], i % 2 ? "#5f6670" : "#8a3e2e");
+        rect(x + 8 * u, -18 * u, 10 * u, 10 * u, "#7fa7c4"); rect(x + 24 * u, -2 * u, 9 * u, 16 * u, "#2f4f3a");
+      }
+      label(LABELS.heybridge, 0, 84 * u);
+      break;
+    }
+    case "barge": {
+      // Traditional sailing barge with tan sails
+      ctx.fillStyle = C.water1; rr(-70 * u, -20 * u, 140 * u, 60 * u, 10 * u); ctx.fill();
+      poly([-50 * u, 24 * u, 50 * u, 24 * u, 40 * u, 36 * u, -42 * u, 36 * u], "#2a2a2a");
+      rect(-4 * u, -110 * u, 4 * u, 136 * u, "#3a2a1f");
+      poly([0, -104 * u, 46 * u, 18 * u, 0, 18 * u], "#a5532f");
+      poly([-4 * u, -90 * u, -4 * u, 18 * u, -40 * u, 18 * u], "#b8673d");
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+function drawMooredBoat(x, y, u, col) {
+  // Narrowboat seen from above, pointing up the page
+  ctx.fillStyle = col; rr(x - 9 * u, y - 40 * u, 18 * u, 80 * u, 8 * u); ctx.fill();
+  rect(x - 6 * u, y - 26 * u, 12 * u, 50 * u, "#e9dcc0");
+  rect(x - 1 * u, y - 22 * u, 2 * u, 42 * u, col);
+}
+
+/* =========================================================================
+   LOCK GATES, ITEMS AND THE PRICE BAILEY CRUISE BOAT
+   ========================================================================= */
+function drawGate(g) {
+  const y = g.y * H, h = Math.max(16, H * 0.026);
+  const gapL = RL + (g.gx - g.gw / 2) * RW, gapR = RL + (g.gx + g.gw / 2) * RW;
+  // Stone lock walls on the banks
+  rect(RL - 26, y - h * 2, 26, h * 4, "#8d939a"); rect(RR, y - h * 2, 26, h * 4, "#8d939a");
+  // Wooden gate beams with balance-beam detail
+  for (const [a, b] of [[RL, gapL], [gapR, RR]]) {
+    if (b - a < 2) continue;
+    ctx.fillStyle = C.woodDark; rr(a, y - h / 2 - 2, b - a, h + 4, 4); ctx.fill();
+    ctx.fillStyle = C.wood; rr(a + 2, y - h / 2, b - a - 4, h, 3); ctx.fill();
+    ctx.strokeStyle = "#f2f2f2"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(a + 6, y - h / 2 + 3); ctx.lineTo(b - 6, y + h / 2 - 3); ctx.stroke();
+  }
+  // Gold posts and arrow mark the gap
+  if (!g.done || g.passed) {
+    circle(gapL, y, h * 0.6, getCss("--pb-gold")); circle(gapR, y, h * 0.6, getCss("--pb-gold"));
+  }
+  if (!g.done) {
+    const cx = (gapL + gapR) / 2, bob = Math.sin(performance.now() / 180) * 5;
+    poly([cx - 16, y - h * 2.6 + bob, cx + 16, y - h * 2.6 + bob, cx, y - h * 1.4 + bob], getCss("--pb-gold"));
+    ctx.font = `800 ${Math.max(14, H * 0.02)}px ${getCss("--font")}`; ctx.fillStyle = "#fff";
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.fillText("LOCK GATE", cx, y - h * 2.9 + bob);
+  }
+}
+
+function drawItem(it) {
+  const r = itemR(), x = itemPX(it.f) + Math.sin(it.bob) * 3, y = it.y * H;
+  const col = it.kind === "risk" ? getCss("--pb-risk") : it.kind === "bonus" ? getCss("--pb-gold") : getCss("--pb-good");
+  // Ripple ring on the water
+  ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.25, r * (1.15 + 0.08 * Math.sin(it.bob * 2)), r * 0.55, 0, 0, 6.28); ctx.stroke();
+  ctx.save();
+  ctx.shadowColor = col; ctx.shadowBlur = 16;
+  if (it.kind === "risk") {
+    // Diamond hazard marker so meaning is not colour-only
+    poly([x, y - r, x + r, y, x, y + r, x - r, y], col);
+  } else {
+    // Buoy: ring with white bands
+    circle(x, y, r * 0.9, col);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = r * 0.16;
+    for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(x, y, r * 0.78, k * 1.5708 + 0.25, k * 1.5708 + 0.6); ctx.stroke(); }
+  }
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = it.kind === "risk" ? "#fff" : getCss("--pb-navy");
+  ctx.font = `800 ${r * 0.9}px ${getCss("--font")}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(it.kind === "risk" ? "!" : it.kind === "bonus" ? "★" : "+", x, y + 2);
+  // Label underneath, on a dark backing so it reads on water
+  const fs = Math.max(14, r * 0.42);
+  ctx.font = `700 ${fs}px ${getCss("--font")}`;
+  const tw = ctx.measureText(it.def.label).width;
+  ctx.fillStyle = "rgba(11,35,65,0.6)"; rr(x - tw / 2 - 6, y + r + 2, tw + 12, fs * 1.45, fs * 0.7); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.fillText(it.def.label, x, y + r + 2 + fs * 0.75);
+  ctx.restore();
+}
+
+function drawBoat() {
+  const bx = boatPX(), by = boatCY(), w = boatW(), l = boatL();
+  const top = -l / 2, bot = l / 2;
+  // Wake trailing behind (down the screen)
+  ctx.save();
+  ctx.translate(bx, by);
+  for (let k = 0; k < 3; k++) {
+    const a = 0.32 - k * 0.09;
+    ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 3;
+    const spread = w * (0.55 + k * 0.45);
+    ctx.beginPath(); ctx.moveTo(-w * 0.38, bot - 6); ctx.lineTo(-spread, H - by + 20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w * 0.38, bot - 6); ctx.lineTo(spread, H - by + 20); ctx.stroke();
+  }
+  for (let i = 0; i < 10; i++) {
+    const p = frac(G.flow * 2.2 + i / 10);
+    circle(Math.sin(i * 2.3) * w * 0.25 * (1 + p), bot + p * (H - by - bot + 30), 4 + p * 4, `rgba(255,255,255,${0.45 * (1 - p)})`);
+  }
+  ctx.rotate(G.lean);
+
+  // Shadow
+  ctx.fillStyle = "rgba(0,0,0,0.22)"; hullPath(w, l, 6, 8); ctx.fill();
+  // Hull
+  ctx.fillStyle = "#fdfdfd"; hullPath(w, l, 0, 0); ctx.fill();
+  ctx.strokeStyle = getCss("--pb-navy"); ctx.lineWidth = 3; ctx.stroke();
+  // Accent rubbing strake
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle = getCss("--pb-accent"); ctx.lineWidth = w * 0.09; hullPath(w, l, 0, 0); ctx.stroke();
+  ctx.restore();
+  // Foredeck seating
+  ctx.fillStyle = "#d8c6a4"; rr(-w * 0.25, top + l * 0.17, w * 0.5, l * 0.08, 4); ctx.fill();
+  // Cabin roof with windows along each side
+  const cx0 = -w * 0.36, cw = w * 0.72, cy0 = top + l * 0.3, ch = l * 0.6;
+  ctx.fillStyle = getCss("--pb-teal"); rr(cx0, cy0, cw, ch, w * 0.12); ctx.fill();
+  ctx.fillStyle = "#d4f1f2";
+  const nWin = 5;
+  for (let i = 0; i < nWin; i++) {
+    const wy = cy0 + ch * 0.08 + i * (ch * 0.84 / nWin);
+    rr(cx0 + 3, wy, w * 0.08, ch * 0.84 / nWin - 4, 2); ctx.fill();
+    rr(cx0 + cw - 3 - w * 0.08, wy, w * 0.08, ch * 0.84 / nWin - 4, 2); ctx.fill();
+  }
+  // Brand name along the roof
+  ctx.save(); ctx.rotate(-Math.PI / 2);
+  // Size the name so it always fits the cabin roof
+  let fs = w * 0.15;
+  ctx.font = `800 ${fs}px ${getCss("--font")}`;
+  const nameW = ctx.measureText("PRICE BAILEY").width;
+  if (nameW > ch * 0.72) fs *= (ch * 0.72) / nameW;
+  ctx.fillStyle = "#fff"; ctx.font = `800 ${fs}px ${getCss("--font")}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("PRICE BAILEY", -(cy0 + ch / 2), 0);   // TODO: could become the logo
+  ctx.restore();
+  // Stern flag
+  poly([0, bot - 4, w * 0.22, bot + 6, 0, bot + 14], getCss("--pb-accent"));
+  ctx.restore();
+}
+function hullPath(w, l, ox, oy) {
+  const top = -l / 2 + oy, bot = l / 2 + oy, hw = w / 2;
+  ctx.beginPath();
+  ctx.moveTo(ox, top);
+  ctx.bezierCurveTo(ox + hw * 0.9, top + l * 0.06, ox + hw, top + l * 0.22, ox + hw, top + l * 0.32);
+  ctx.lineTo(ox + hw, bot - w * 0.25);
+  ctx.quadraticCurveTo(ox + hw, bot, ox + hw - w * 0.25, bot);
+  ctx.lineTo(ox - hw + w * 0.25, bot);
+  ctx.quadraticCurveTo(ox - hw, bot, ox - hw, bot - w * 0.25);
+  ctx.lineTo(ox - hw, top + l * 0.32);
+  ctx.bezierCurveTo(ox - hw, top + l * 0.22, ox - hw * 0.9, top + l * 0.06, ox, top);
+  ctx.closePath();
+}
+
+function drawBanner() {
+  if (!G.banner) return;
+  const a = Math.min(1, G.banner.life / 0.4, (2.4 - G.banner.life) / 0.3);
+  const fs = Math.max(22, H * 0.045);
+  ctx.save(); ctx.globalAlpha = Math.max(0, a);
+  ctx.font = `800 ${fs}px ${getCss("--font")}`;
+  const tw = ctx.measureText(G.banner.text).width + fs * 1.6;
+  const y = H * 0.3;
+  ctx.fillStyle = "rgba(11,35,65,0.9)"; rr(W / 2 - tw / 2, y - fs, tw, fs * 2, fs); ctx.fill();
+  ctx.strokeStyle = getCss("--pb-gold"); ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(G.banner.text, W / 2, y + 2);
+  ctx.restore();
+}
+
+/* =========================================================================
+   MAIN LOOP
+   ========================================================================= */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt);
+  ctx.save();
+  if (G.shake > 0) ctx.translate((Math.random() - 0.5) * 14 * G.shake, (Math.random() - 0.5) * 14 * G.shake);
+  drawBanks();
+  drawRiver();
+  // Scenery: reeds first, then decor and landmarks from top to bottom
+  const u = (BW * 0.8) / 200;
+  for (const s of G.scenery) if (s.kind === "reed") drawReed(s.side, s.y * H);
+  const sorted = G.scenery.filter((s) => s.kind !== "reed").sort((a, b) => a.y - b.y);
+  for (const s of sorted) {
+    const x = bankCX(s.side, s.fx), y = s.y * H;
+    if (s.kind === "landmark") drawLandmark(s.type, x, y, u);
+    else {
+      const sc = u * 1.3 * s.s;
+      if (s.type === "tree") drawTree(x, y, sc);
+      else if (s.type === "house") drawHouse(x, y, sc, s.hue);
+      else if (s.type === "lamp") drawLamp(s.side === "L" ? RL - BW * 0.2 : RR + BW * 0.2, y, sc);
+      else if (s.type === "bush") drawBush(x, y, sc);
+      else if (s.type === "bale") drawBale(x, y, sc);
+      else if (s.type === "bench") drawBench(s.side === "L" ? RL - BW * 0.22 : RR + BW * 0.22, y, sc);
+    }
+  }
+  G.gates.forEach(drawGate);
+  if (G.state === "playing" || G.state === "end") G.items.forEach(drawItem);
+  drawBoat();
+  for (const p of G.parts) { ctx.globalAlpha = p.life / p.max; ctx.fillStyle = p.color; ctx.fillRect(p.x - 3, p.y - 3, 6, 6); }
+  ctx.globalAlpha = 1;
+  for (const p of G.pops) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life)); ctx.fillStyle = p.color;
+    ctx.font = `800 ${Math.max(20, itemR() * 0.75)}px ${getCss("--font")}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.lineWidth = 4; ctx.strokeStyle = "rgba(11,35,65,0.7)"; ctx.strokeText(p.text, p.x, p.y);
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  drawBanner();
+  ctx.restore();
+  if (G.flash > 0) { ctx.fillStyle = `rgba(255,90,79,${0.18 * G.flash})`; ctx.fillRect(0, 0, W, H); }
+  requestAnimationFrame(frame);
+}
+// Pre-fill the banks so the first frame is not empty
+for (let i = 0; i < 60; i++) scrollWorld(0.03);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

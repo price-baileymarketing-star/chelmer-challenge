@@ -8,13 +8,12 @@
 <style>
   /* BRAND SETTINGS: keep in sync with the display page (TODO: confirm hex values) */
   :root {
-    --pb-navy: #0b2341; --pb-navy-2: #12325a; --pb-accent: #e4007c;
+    --pb-navy: #0b2341; --pb-navy-2: #12325a; --pb-accent: #e4007c; --pb-teal: #0f8a8c;
     --pb-good: #2fbf8f; --pb-gold: #f5b82e; --pb-risk: #ff5a4f; --pb-muted: #a9b8cc;
     --font: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--pb-navy); color: #fff; font-family: var(--font);
-               overscroll-behavior: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+  html, body { margin: 0; min-height: 100%; background: var(--pb-navy); color: #fff; font-family: var(--font); overscroll-behavior: none; }
   body { display: flex; flex-direction: column; min-height: 100dvh; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; }
   .logo { background: #fff; color: var(--pb-navy); font-weight: 800; padding: 6px 10px; border-radius: 6px; font-size: 15px; } /* TODO: swap for logo image */
@@ -22,13 +21,34 @@
   .dot { width: 12px; height: 12px; border-radius: 50%; background: #999; }
   .dot.connected { background: var(--pb-good); } .dot.connecting { background: var(--pb-gold); } .dot.bad { background: var(--pb-risk); }
   .hidden { display: none !important; }
-  .view { flex: 1; display: flex; flex-direction: column; padding: 0 16px 20px; gap: 16px; }
-  h1 { margin: 6px 0 0; font-size: 34px; } h1 span { color: var(--pb-accent); }
-  p { color: var(--pb-muted); font-size: 17px; line-height: 1.4; margin: 0; }
-  .btn { font: inherit; font-weight: 800; font-size: 22px; border: 0; border-radius: 16px; padding: 20px; width: 100%;
+  .view { flex: 1; display: flex; flex-direction: column; padding: 0 16px 20px; gap: 14px; }
+  /* Game views block scrolling and text selection so steering feels solid */
+  .game { touch-action: none; user-select: none; -webkit-user-select: none; }
+  h1 { margin: 6px 0 0; font-size: 32px; } h1 span { color: var(--pb-accent); }
+  h2 { margin: 0; font-size: 24px; }
+  p { color: var(--pb-muted); font-size: 16px; line-height: 1.4; margin: 0; }
+  .btn { font: inherit; font-weight: 800; font-size: 21px; border: 0; border-radius: 16px; padding: 18px; width: 100%;
          background: var(--pb-accent); color: #fff; cursor: pointer; }
+  .btn:disabled { opacity: .45; }
   .btn.secondary { background: transparent; border: 2px solid rgba(255,255,255,.5); }
+  .btn.link { background: none; font-size: 15px; font-weight: 700; padding: 8px; color: var(--pb-muted); text-decoration: underline; }
   .btn:active { transform: scale(.98); }
+
+  /* Details form */
+  form { display: flex; flex-direction: column; gap: 12px; }
+  label { font-weight: 700; font-size: 15px; display: flex; flex-direction: column; gap: 6px; }
+  label .opt { color: var(--pb-muted); font-weight: 400; }
+  input[type=text], input[type=email], input[type=tel] {
+    font: inherit; font-size: 17px; padding: 13px 14px; border-radius: 12px; border: 2px solid rgba(255,255,255,.2);
+    background: rgba(255,255,255,.07); color: #fff; width: 100%; }
+  input:focus { outline: none; border-color: var(--pb-teal); background: rgba(255,255,255,.12); }
+  input.bad { border-color: var(--pb-risk); }
+  .consent { flex-direction: row; align-items: flex-start; gap: 12px; font-weight: 400; font-size: 14px; color: #d5deea; line-height: 1.4; }
+  .consent input { width: 26px; height: 26px; flex: none; margin: 0; accent-color: var(--pb-teal); }
+  .privacy { font-size: 13px; color: var(--pb-muted); line-height: 1.4; }
+  .privacy a { color: #fff; }
+  .formerr { color: #ffb3ad; font-size: 14px; font-weight: 700; min-height: 1em; }
+
   .stats { display: flex; justify-content: space-between; font-weight: 800; font-size: 20px; }
   /* Steering pad: the whole area tracks the finger left to right */
   #pad { flex: 1; min-height: 240px; border-radius: 22px; position: relative; overflow: hidden;
@@ -43,7 +63,10 @@
   .big { font-size: 72px; font-weight: 800; text-align: center; line-height: 1; margin-top: 10px; }
   .hs { text-align: center; color: var(--pb-gold); font-weight: 700; }
   .msg { text-align: center; font-size: 19px; color: #fff; }
+  .saved { text-align: center; font-size: 15px; font-weight: 700; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.07); }
+  .saved.ok { color: var(--pb-good); } .saved.fail { color: #ffb3ad; }
   .error { background: rgba(255,90,79,.15); border: 1px solid var(--pb-risk); padding: 14px; border-radius: 12px; color: #fff; }
+  #debug { font: 12px/1.4 monospace; color: #9fb3c8; white-space: pre-wrap; word-break: break-all; padding: 0 16px 16px; }
 </style>
 </head>
 <body>
@@ -51,18 +74,41 @@
   <div class="logo">Price Bailey</div>
   <div class="status"><span class="dot connecting" id="dot"></span><span id="statusText">Connecting…</span></div>
 </header>
+<div class="error hidden" id="err" style="margin:0 16px 12px"></div>
 
-<!-- LOBBY -->
-<section class="view" id="vLobby">
+<!-- STEP 1: DETAILS FORM -->
+<section class="view" id="vForm">
   <h1>Chelmer <span>Challenge</span></h1>
+  <p>Enter your details to take the helm. Your score will be saved to today's leaderboard.</p>
+  <form id="details" novalidate autocomplete="on">
+    <label>First name <input type="text" id="fFirst" autocomplete="given-name" maxlength="40" required></label>
+    <label>Last name <input type="text" id="fLast" autocomplete="family-name" maxlength="40" required></label>
+    <label>Business email <input type="email" id="fEmail" autocomplete="email" inputmode="email" maxlength="100" required></label>
+    <label>Organisation <input type="text" id="fOrg" autocomplete="organization" maxlength="80" required></label>
+    <label><span>Mobile number <span class="opt">(optional)</span></span> <input type="tel" id="fMobile" autocomplete="tel" inputmode="tel" maxlength="20"></label>
+    <!-- TODO: replace with the compliance-approved consent wording (must match the HubSpot form) -->
+    <label class="consent"><input type="checkbox" id="fConsent">
+      <span id="consentText">Yes, I would like to receive updates, insights and event invitations from Price Bailey by email.</span></label>
+    <div class="privacy" id="privacyText">
+      <!-- TODO: add the approved privacy notice link -->
+      We will use your details to record your score and, if you are a business contact, to follow up after the event. See our privacy notice for how we handle your data.
+    </div>
+    <div class="formerr" id="formErr" role="alert"></div>
+    <button class="btn" id="saveBtn" type="submit">Continue</button>
+  </form>
+</section>
+
+<!-- STEP 2: READY TO PLAY -->
+<section class="view hidden" id="vReady">
+  <h1>Ready, <span id="readyName">skipper</span>?</h1>
   <p>Watch the big screen. Slide your finger left and right to steer the Price Bailey cruise boat down the River Chelmer. Collect wins, avoid risks and steer through the gap in each lock gate.</p>
-  <div class="error hidden" id="err"></div>
   <div style="flex:1"></div>
   <button class="btn" id="startBtn" disabled>Start cruise</button>
+  <button class="btn link" id="notMeBtn" type="button">Not you? Change details</button>
 </section>
 
 <!-- PLAYING -->
-<section class="view hidden" id="vPlay">
+<section class="view game hidden" id="vPlay">
   <div class="stats"><span>Score <span id="score">0</span></span><span>Lives <span id="lives">3</span></span><span><span id="time">60</span>s</span></div>
   <div id="pad" aria-label="Steering pad. Slide left or right.">
     <div class="arrows"><span>◀</span><span>▶</span></div>
@@ -73,33 +119,92 @@
 </section>
 
 <!-- END -->
-<section class="view hidden" id="vEnd">
+<section class="view game hidden" id="vEnd">
   <div class="big" id="final">0</div>
-  <div class="hs" id="high"></div>
   <div class="msg" id="endMsg"></div>
+  <div class="saved" id="saved">Saving your score…</div>
   <div style="flex:1"></div>
-  <button class="btn" id="detailsBtn">Leave your details</button>
-  <button class="btn secondary" id="againBtn">Play again</button>
+  <button class="btn" id="newBtn">New game</button>
 </section>
+
+<!-- THANKS: shown after New game. The big screen now has a fresh QR code. -->
+<section class="view hidden" id="vThanks">
+  <h1>Thanks for <span>playing</span></h1>
+  <p>Your score has been saved. To play again, scan the new QR code on the big screen.</p>
+  <p>The Price Bailey team would be happy to talk about how we help Chelmsford businesses grow.</p>
+</section>
+
+<div id="debug" class="hidden"></div>
 
 <script src="../lib/link.js"></script>
 <script>
 "use strict";
-const FORM = { base: "https://www.pricebailey.co.uk/enquiry-form/game/", scoreField: "wpf72332_23", urlField: "wpf72332_31" }; // TODO: confirm _31
+/* =========================================================================
+   HUBSPOT SETTINGS
+   Portal and form IDs are public by design (they appear in any embed code).
+   No secret keys are used, and no personal data is stored on GitHub or the
+   device: details are held in memory only and sent straight to HubSpot.
+   ========================================================================= */
+const HUBSPOT = {
+  portalId: "145711233",
+  formId: "4efe8f63-87e7-4b4c-8ee1-351b8840e6a4",
+  // HubSpot's public form submission service. The EU address is tried if the first does not respond.
+  endpoints: [
+    "https://api.hsforms.com/submissions/v3/integration/submit",
+    "https://api-eu1.hsforms.com/submissions/v3/integration/submit"
+  ],
+  // Internal property names. TODO: confirm each one in HubSpot (Settings > Properties).
+  fields: {
+    firstName: "firstname",
+    lastName: "lastname",
+    email: "email",
+    mobile: "mobilephone",
+    organisation: "company",       // TODO: may be a custom property if "Organisation Name" is not the standard company field
+    gameName: "game_name",         // TODO: confirm
+    highScore: "high_score",       // TODO: confirm
+    eventName: "event_name",       // TODO: confirm
+    consent: ""                    // TODO: internal name of the "Yes" checkbox, if it is a contact property
+  },
+  // If the "Yes" checkbox is HubSpot's built-in marketing consent, add its subscription type ID here instead.
+  subscriptionTypeId: null,        // TODO: e.g. 123456789
+  gameName: "Chelmer Challenge",
+  eventName: "TODO: event name",   // TODO: e.g. "Chelmsford Business Expo 2026"
+  submitAtStart: true              // also send details when play starts, so leads are kept even if a game is abandoned
+};
 
 const $ = (id) => document.getElementById(id);
-const room = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const params = new URLSearchParams(location.search);
+const DEBUG = params.has("debug");
+const room = (params.get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 let last = { state: "title", score: 0, high: 0, gameUrl: "" };
-let x = 0.5, lastSent = 0, tilt = false;
+let x = 0.5, lastSent = 0, tilt = false, connected = false;
 
-function show(id) { ["vLobby", "vPlay", "vEnd"].forEach((v) => $(v).classList.toggle("hidden", v !== id)); }
+/* Player details live in memory only, and are cleared for the next player */
+let player = null;           // { first, last, email, org, mobile, consent }
+let best = 0;                // this player's best score this session
+let awaitingResult = false;  // true between pressing Start and the end screen
+let forceForm = false;       // "Next player" pressed: show the form whatever the big screen says
+
+function debug(line) {
+  if (!DEBUG) return;
+  const d = $("debug"); d.classList.remove("hidden");
+  d.textContent = (new Date().toLocaleTimeString() + " " + line + "\n" + d.textContent).slice(0, 4000);
+}
+
+function show(id) { ["vForm", "vReady", "vPlay", "vEnd", "vThanks"].forEach((v) => $(v).classList.toggle("hidden", v !== id)); }
+let finished = false;   // this game session is over; the big screen has reloaded with a new code
+function lobbyView() { return player ? "vReady" : "vForm"; }
 
 function setStatus(s) {
+  if (finished) {   // the old room has closed on purpose, so don't show a connection error
+    $("dot").className = "dot"; $("statusText").textContent = "Game finished"; $("err").classList.add("hidden"); return;
+  }
   const map = { connected: ["connected", "Connected"], connecting: ["connecting", "Connecting…"],
                 lost: ["bad", "Reconnecting…"], nogame: ["bad", "Game not found"], offline: ["bad", "No internet"] };
   const m = map[s] || ["connecting", s];
   $("dot").className = "dot " + m[0]; $("statusText").textContent = m[1];
-  $("startBtn").disabled = s !== "connected";
+  connected = s === "connected";
+  $("startBtn").disabled = !connected;
   const err = $("err");
   if (s === "nogame") { err.textContent = "Can't find the game. Check the big screen is open and rescan the QR code."; err.classList.remove("hidden"); }
   else if (s === "offline") { err.textContent = "This phone needs an internet connection. Try switching to mobile data."; err.classList.remove("hidden"); }
@@ -109,20 +214,142 @@ function setStatus(s) {
 if (!room) { setStatus("nogame"); }
 const link = room ? GPLink.createController(room, { onStatus: setStatus, onMessage: onState }) : null;
 
+/* =========================================================================
+   DETAILS FORM
+   ========================================================================= */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+$("details").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = {
+    first: $("fFirst").value.trim(), last: $("fLast").value.trim(), email: $("fEmail").value.trim(),
+    org: $("fOrg").value.trim(), mobile: $("fMobile").value.trim(), consent: $("fConsent").checked
+  };
+  const bad = [];
+  [["fFirst", v.first], ["fLast", v.last], ["fOrg", v.org]].forEach(([id, val]) => { if (!val) bad.push(id); });
+  if (!EMAIL_RE.test(v.email)) bad.push("fEmail");
+  if (v.mobile && !/^[+()\d\s-]{7,20}$/.test(v.mobile)) bad.push("fMobile");
+  ["fFirst", "fLast", "fEmail", "fOrg", "fMobile"].forEach((id) => $(id).classList.toggle("bad", bad.includes(id)));
+  if (bad.length) {
+    $("formErr").textContent = bad.includes("fEmail") && bad.length === 1 ? "Please check your email address." : "Please complete the highlighted fields.";
+    $(bad[0]).focus();
+    return;
+  }
+  $("formErr").textContent = "";
+  player = v; best = 0; forceForm = false;
+  document.activeElement && document.activeElement.blur();
+  $("readyName").textContent = v.first;
+  show("vReady");
+});
+
+function clearPlayer() {
+  player = null; best = 0; awaitingResult = false;
+  $("details").reset();
+  ["fFirst", "fLast", "fEmail", "fOrg", "fMobile"].forEach((id) => $(id).classList.remove("bad"));
+  $("formErr").textContent = "";
+  show("vForm");
+  window.scrollTo(0, 0);
+}
+$("notMeBtn").onclick = clearPlayer;
+
+/* =========================================================================
+   HUBSPOT SUBMISSION
+   ========================================================================= */
+function buildPayload(p, score) {
+  const f = HUBSPOT.fields;
+  const fields = [];
+  const add = (name, value) => { if (name && value !== undefined && value !== null && value !== "") fields.push({ objectTypeId: "0-1", name, value: String(value) }); };
+  add(f.firstName, p.first);
+  add(f.lastName, p.last);
+  add(f.email, p.email);
+  add(f.organisation, p.org);
+  add(f.mobile, p.mobile);
+  add(f.gameName, HUBSPOT.gameName);
+  if (!/^TODO/.test(HUBSPOT.eventName)) add(f.eventName, HUBSPOT.eventName);
+  if (score !== null) add(f.highScore, score);
+  if (f.consent) add(f.consent, p.consent ? "true" : "false");
+
+  const body = {
+    fields,
+    context: { pageUri: last.gameUrl || location.href.split("?")[0], pageName: "Chelmer Challenge" }
+  };
+  if (HUBSPOT.subscriptionTypeId) {
+    body.legalConsentOptions = { consent: {
+      consentToProcess: true,
+      text: $("privacyText").textContent.trim(),
+      communications: [{ value: p.consent, subscriptionTypeId: Number(HUBSPOT.subscriptionTypeId), text: $("consentText").textContent.trim() }]
+    } };
+  }
+  return body;
+}
+
+async function submitToHubSpot(p, score, attempt = 0) {
+  const body = JSON.stringify(buildPayload(p, score));
+  for (const base of HUBSPOT.endpoints) {
+    const url = `${base}/${HUBSPOT.portalId}/${HUBSPOT.formId}`;
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      const text = await res.text();
+      debug(`${res.status} from ${new URL(base).host}: ${text.slice(0, 600)}`);
+      if (res.ok) return { ok: true };
+      if (res.status === 404) continue;               // try the next address
+      return { ok: false, status: res.status, text }; // HubSpot rejected the data (for example a wrong field name)
+    } catch (e) {
+      debug(`network error from ${new URL(base).host}: ${e.message}`);
+    }
+  }
+  // Network trouble: retry a few times, holding the data in memory only
+  if (attempt < 3) {
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    return submitToHubSpot(p, score, attempt + 1);
+  }
+  return { ok: false, status: 0 };
+}
+
+/* =========================================================================
+   GAME FLOW
+   ========================================================================= */
+function startGame() {
+  if (!link || !player) return;
+  awaitingResult = true; forceForm = false;
+  link.send({ t: "start" });   // no personal details are sent to the big screen
+  if (HUBSPOT.submitAtStart && best === 0) submitToHubSpot({ ...player }, null);
+}
+$("startBtn").onclick = startGame;
+/* New game: tell the big screen to reload with a fresh QR code, then thank the player */
+function finishSession() {
+  finished = true;
+  player = null; best = 0; awaitingResult = false;
+  $("details").reset();
+  setStatus("finished");
+  show("vThanks");
+}
+$("newBtn").onclick = () => { if (link) link.send({ t: "newgame" }); finishSession(); };
+
 /* Display -> controller: mirror the big screen state */
 function onState(msg) {
-  if (!msg || msg.t !== "state") return;
+  if (msg && msg.t === "reset") { finishSession(); return; }   // big screen started a new game itself
+  if (finished || !msg || msg.t !== "state") return;
   last = msg;
-  if (msg.state === "title") show("vLobby");
+  if (msg.state === "title") { if (!$("vForm").contains(document.activeElement)) show(lobbyView()); }
   else if (msg.state === "playing" || msg.state === "countdown") {
+    if (!player) return;   // someone else's game; stay on the form
     show("vPlay");
     $("score").textContent = msg.score; $("lives").textContent = msg.lives; $("time").textContent = msg.time;
   } else if (msg.state === "end") {
+    if (forceForm || !player) { if (!$("vForm").contains(document.activeElement)) show("vForm"); return; }
     show("vEnd");
     $("final").textContent = msg.score;
-    $("high").textContent = "High score: " + msg.high;
     $("endMsg").textContent = msg.msg || "";
-    if (navigator.vibrate) navigator.vibrate(120);
+    if (awaitingResult) {
+      awaitingResult = false;
+      best = Math.max(best, msg.score || 0);
+      const s = $("saved"); s.className = "saved"; s.textContent = "Saving your score…";
+      if (navigator.vibrate) navigator.vibrate(120);
+      submitToHubSpot({ ...player }, best).then((r) => {
+        s.className = "saved " + (r.ok ? "ok" : "fail");
+        s.textContent = r.ok ? "Your details and score have been saved." : "We couldn't save your score. Please let the team know.";
+      });
+    }
   }
 }
 
@@ -161,17 +388,6 @@ window.addEventListener("deviceorientation", (e) => {
   if (!tilt || e.gamma == null) return;
   sendX(0.5 + e.gamma / 50); // about 25 degrees either way reaches the edge
 });
-
-$("startBtn").onclick = () => link && link.send({ t: "start" });
-$("againBtn").onclick = () => link && link.send({ t: "start" });
-
-/* Lead capture: score and the GAME's URL (the big screen), not the controller URL */
-$("detailsBtn").onclick = () => {
-  const score = Math.max(0, Math.floor(last.score || 0));
-  const gameUrl = encodeURIComponent(last.gameUrl || window.location.href);
-  const formUrl = `${FORM.base}?${FORM.scoreField}=${encodeURIComponent(score)}&${FORM.urlField}=${gameUrl}`;
-  window.open(formUrl, "_blank");
-};
 
 /* Keep the phone screen awake while playing, where supported */
 (async () => { try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {} })();

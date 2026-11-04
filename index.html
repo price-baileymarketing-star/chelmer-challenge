@@ -78,7 +78,8 @@
   .end .row { display: flex; gap: 1em; justify-content: center; flex-wrap: wrap; margin-top: 1.4em; }
   .end .talk { color: var(--pb-muted); margin-top: 1.2em; font-size: clamp(14px, 1.5vw, 20px); }
 
-  #countdown { position: fixed; inset: 0; display: grid; place-items: center; font-size: 22vh; font-weight: 800; pointer-events: none; text-shadow: 0 6px 30px rgba(0,0,0,.4); }
+  #countdown { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 22vh; font-weight: 800; line-height: 1; pointer-events: none; text-shadow: 0 6px 30px rgba(0,0,0,.4); }
+  #countdown .skipper { font-size: 5vh; color: var(--pb-gold); letter-spacing: .04em; margin-bottom: .4em; }
 
   @media (max-width: 760px) { .panel { grid-template-columns: 1fr; } }
 </style>
@@ -137,12 +138,11 @@
     <div class="result" id="endResult"></div>
     <div class="big" id="finalScore">0</div>
     <div class="msg" id="endMsg"></div>
-    <div class="hs" id="highScore"></div>
     <div class="row">
-      <button class="btn" id="detailsBtn">Leave your details</button>
-      <button class="btn secondary" id="againBtn">Play again</button>
+      <button class="btn" id="newBtn">New game</button>
     </div>
-    <div class="talk">Your phone has the same options. Ask the Price Bailey team how we help Chelmsford businesses grow.</div>
+    <div class="talk">Your score has been sent from your phone. Ask the Price Bailey team how we help Chelmsford businesses grow.</div>
+    <div class="talk" id="resetNote"></div>
   </div>
 </div>
 
@@ -159,14 +159,19 @@ const CONFIG = {
   roundSeconds: 60,
   stageSeconds: 20,          // three stages of 20 seconds
   lives: 3,
-  baseSpeed: 0.30,           // river speed in screen heights per second at start
-  speedGrowth: 0.0035,       // extra speed per second played
-  baseSpawn: 0.85,           // seconds between floating items at start
-  minSpawn: 0.38,
+  speedByGate: [0.20, 0.29, 0.38, 0.46],  // river speed (screen heights per second) before gate 1, then after gates 1, 2 and 3
+  speedRamp: 0.0015,         // small extra speed per second within each section
+  spacingByGate: [0.30, 0.26, 0.22, 0.20], // gap between floating items (screen heights), tighter after each gate
+  bonusChance: 0.035,        // chance that a new item is a PB advice bonus
+  bonusMax: 2,               // most PB advice bonuses per game
+  bonusMinGap: 12,           // seconds between bonuses
+  bonusGuaranteeBy: 30,      // if no bonus has appeared by this time, the next item is one
+  shieldSeconds: 4,          // protection from risks after collecting PB advice
+  autoResetSeconds: 45,      // end screen returns to a fresh QR code after this long
   riskChance: [0.28, 0.36, 0.45],   // per stage
   lockGap: [0.40, 0.31, 0.24],      // gap width as a share of the river, per stage
   lockBonus: [50, 75, 100],         // points for passing each lock
-  lockTimes: [16, 36, 55],          // when each lock gate appears (seconds)
+  lockTimes: [14, 33, 50],          // when each lock gate appears (seconds)
   finishBonus: 100,
   maxCombo: 5,
   comboStep: 4,              // catches per multiplier step
@@ -201,11 +206,11 @@ const LANDMARKS = [
   { t: 1.0,  kind: "cathedral",   side: "L" },
   { t: 6.0,  kind: "shirehall",   side: "R" },
   { t: 11.0, kind: "marconi",     side: "L" },
-  { t: 15.2, kind: "cottage",     side: "R" },
+  { t: 13.2, kind: "cottage",     side: "R" },
   { t: 21.0, kind: "springfield", side: "R" },
   { t: 25.5, kind: "moored",      side: "L" },
   { t: 31.0, kind: "moored",      side: "R" },
-  { t: 35.2, kind: "cottage",     side: "L" },
+  { t: 32.2, kind: "cottage",     side: "L" },
   { t: 44.0, kind: "barn",        side: "R" },
   { t: 54.6, kind: "heybridge",   side: "L" },
   { t: 54.6, kind: "barge",       side: "R" }
@@ -297,8 +302,9 @@ openRoom();
 function handleMessage(msg) {
   if (!msg || !msg.t) return;
   if (msg.t === "pos") G.targetX = Math.max(0, Math.min(1, +msg.x || 0));
-  else if (msg.t === "start" && (G.state === "title" || G.state === "end")) startCountdown();
+  else if (msg.t === "start" && (G.state === "title" || G.state === "end")) startCountdown(msg.name);
   else if (msg.t === "hello") broadcastState();
+  else if (msg.t === "newgame" && G.state === "end") newGame();
 }
 
 /* Display -> controller state updates */
@@ -312,10 +318,13 @@ function broadcastState() {
 /* =========================================================================
    FLOW
    ========================================================================= */
-function startCountdown() {
+function startCountdown(name) {
+  // First name only, shown during the countdown. Set as text, never as HTML.
+  const skipper = typeof name === "string" ? name.trim().slice(0, 20) : "";
   Object.assign(G, { state: "countdown", score: 0, lives: CONFIG.lives, time: CONFIG.roundSeconds,
     streak: 0, mult: 1, elapsed: 0, spawnT: 0.6, stage: 0, items: [], gates: [], parts: [], pops: [],
-    won: false, nextLandmark: 0, gatesDone: 0, banner: null, x: 0.5, targetX: 0.5 });
+    won: false, nextLandmark: 0, gatesDone: 0, banner: null, x: 0.5, targetX: 0.5,
+    gatesCleared: 0, sectionStart: 0, curSpeed: CONFIG.speedByGate[0], shield: 0, bonusCount: 0, lastBonusT: -99 });
   // Clear title-loop landmarks so the cruise starts with a clean city scene
   G.scenery = G.scenery.filter((s) => s.kind !== "landmark");
   $("title").classList.add("hidden"); $("end").classList.add("hidden");
@@ -323,11 +332,16 @@ function startCountdown() {
   updateHud();
   broadcastState();
   const cd = $("countdown"); cd.classList.remove("hidden");
-  let n = 3; cd.textContent = n;
+  const setCd = (txt) => {
+    cd.textContent = "";
+    if (skipper) { const s = document.createElement("div"); s.className = "skipper"; s.textContent = "Skipper " + skipper; cd.appendChild(s); }
+    const nEl = document.createElement("div"); nEl.textContent = txt; cd.appendChild(nEl);
+  };
+  let n = 3; setCd(n);
   const iv = setInterval(() => {
     n--;
-    if (n > 0) cd.textContent = n;
-    else if (n === 0) cd.textContent = "Go";
+    if (n > 0) setCd(n);
+    else if (n === 0) setCd("Go");
     else {
       clearInterval(iv); cd.classList.add("hidden"); G.state = "playing";
       showBanner("Stage 1: " + STAGES[0]);
@@ -346,11 +360,11 @@ function endGame(won) {
   if (isBest) { highScore = s; try { localStorage.setItem(CONFIG.highScoreKey, String(s)); } catch (e) {} }
   $("endResult").textContent = won ? "You reached Heybridge Basin" : "Cruise ended at " + STAGES[G.stage];
   $("finalScore").textContent = s;
-  $("highScore").textContent = isBest ? "New high score" : "High score: " + highScore;
   $("endMsg").textContent = endMessage();
   $("hud").classList.add("hidden");
   $("end").classList.remove("hidden");
-  $("detailsBtn").focus();
+  $("newBtn").focus();
+  G.resetT = CONFIG.autoResetSeconds;
   broadcastState();
 }
 
@@ -370,9 +384,18 @@ function openForm() {
   window.open(formUrl, "_blank");
 }
 
-$("startBtn").onclick = startCountdown;
-$("againBtn").onclick = startCountdown;
-$("detailsBtn").onclick = openForm;
+$("startBtn").onclick = () => startCountdown();
+$("newBtn").onclick = newGame;
+
+/* New game: reload from scratch so the title screen shows a fresh QR code and room code.
+   The phone is told first, so it can thank the player instead of showing a connection error. */
+let resetting = false;
+function newGame() {
+  if (resetting) return;
+  resetting = true;
+  if (link) link.send({ t: "reset" });
+  setTimeout(() => window.location.reload(), 400);
+}
 
 /* Keyboard and mouse fallback */
 const keys = {};
@@ -386,7 +409,12 @@ cv.addEventListener("pointermove", (e) => { if (G.state === "playing") G.targetX
 /* =========================================================================
    GAMEPLAY
    ========================================================================= */
-function speed() { return G.state === "playing" ? CONFIG.baseSpeed + CONFIG.speedGrowth * G.elapsed : 0.14; }
+/* River speed rises in steps as each lock gate is cleared, so players learn the controls first */
+function speed() { return G.state === "playing" ? G.curSpeed : 0.14; }
+function targetSpeed() {
+  const i = Math.min(G.gatesCleared, CONFIG.speedByGate.length - 1);
+  return CONFIG.speedByGate[i] + CONFIG.speedRamp * (G.elapsed - G.sectionStart);
+}
 function itemR() { return Math.max(24, Math.min(W, H) * 0.045); }
 function boatW() { return Math.max(64, RW * 0.13); }
 function boatL() { return Math.min(boatW() * 2.1, H * 0.23); }
@@ -397,7 +425,9 @@ function itemPX(f) { const m = itemR() * 1.2; return RL + m + f * (RW - 2 * m); 
 function spawnItem() {
   const st = G.stage;
   let def, kind;
-  if (Math.random() < 0.05) { def = BONUS; kind = "bonus"; }
+  const bonusOk = G.bonusCount < CONFIG.bonusMax && G.elapsed - G.lastBonusT >= CONFIG.bonusMinGap;
+  const bonusDue = G.bonusCount === 0 && G.elapsed >= CONFIG.bonusGuaranteeBy;   // every game gets at least one
+  if (bonusOk && (bonusDue || Math.random() < CONFIG.bonusChance)) { def = BONUS; kind = "bonus"; G.bonusCount++; G.lastBonusT = G.elapsed; }
   else if (Math.random() < CONFIG.riskChance[st]) { def = RISKS[Math.floor(Math.random() * RISKS.length)]; kind = "risk"; }
   else { def = GOOD[Math.floor(Math.random() * GOOD.length)]; kind = "good"; }
   G.items.push({ f: Math.random(), y: -0.06, def, kind, bob: Math.random() * 6.28 });
@@ -469,9 +499,18 @@ function update(dt) {
     }
   }
 
+  // End screen: count down to a fresh QR code for the next player
+  if (G.state === "end" && G.resetT > 0) {
+    G.resetT -= dt;
+    $("resetNote").textContent = "New game in " + Math.max(0, Math.ceil(G.resetT)) + "s";
+    if (G.resetT <= 0) newGame();
+  }
+
   if (G.state !== "playing") return;
 
   G.elapsed += dt; G.time -= dt;
+  G.curSpeed += (targetSpeed() - G.curSpeed) * Math.min(1, dt * 0.8);   // ease into each new speed
+  G.shield = Math.max(0, G.shield - dt);
 
   // Stage changes
   const st = Math.min(2, Math.floor(G.elapsed / CONFIG.stageSeconds));
@@ -491,7 +530,8 @@ function update(dt) {
   const gateNear = G.gates.some((g) => !g.done && g.y < 0.42);
   if (G.spawnT <= 0 && !gateNear) {
     spawnItem();
-    G.spawnT = Math.max(CONFIG.minSpawn, CONFIG.baseSpawn - G.elapsed * 0.009);
+    const sp = CONFIG.spacingByGate[Math.min(G.gatesCleared, CONFIG.spacingByGate.length - 1)];
+    G.spawnT = sp / G.curSpeed;   // keeps items evenly spaced whatever the speed
   }
 
   // Collisions with the boat (hull treated as a rectangle)
@@ -511,6 +551,7 @@ function update(dt) {
   for (const g of G.gates) {
     if (!g.done && g.y * H >= by - bl / 2) {
       g.done = true;
+      G.gatesCleared++; G.sectionStart = G.elapsed;   // next speed step
       const half = (g.gw * RW) / 2;
       const gapCentre = RL + g.gx * RW;
       const ok = Math.abs(bx - gapCentre) <= half - bw * 0.3;
@@ -567,6 +608,16 @@ function scrollWorld(dy) {
 }
 
 function collide(it, px, py) {
+  if (it.kind === "risk" && G.shield > 0) {
+    // Protected by PB advice: no life lost and the streak is kept
+    burst(px, py, getCss("--pb-gold"), 22);
+    pop(px, py, "Protected", getCss("--pb-gold"));
+    return;
+  }
+  if (it.kind === "bonus") {
+    G.shield = CONFIG.shieldSeconds;
+    showBanner("PB advice: protected for " + CONFIG.shieldSeconds + " seconds");
+  }
   if (it.kind === "risk") {
     G.lives--; G.streak = 0; G.mult = 1; G.shake = 1; G.flash = 1;
     burst(px, py, getCss("--pb-risk"), 26);
@@ -899,6 +950,19 @@ function drawBoat() {
   }
   ctx.rotate(G.lean);
 
+  // PB advice shield: pulsing gold glow, and the boat flashes (faster in the last second)
+  if (G.shield > 0 && G.state === "playing") {
+    const tnow = performance.now() / 1000;
+    const pulse = 0.5 + 0.5 * Math.sin(tnow * 10);
+    ctx.save();
+    ctx.strokeStyle = `rgba(245,184,46,${0.55 + 0.4 * pulse})`; ctx.lineWidth = 6;
+    ctx.shadowColor = getCss("--pb-gold"); ctx.shadowBlur = 30;
+    ctx.beginPath(); ctx.ellipse(0, 0, w * 0.95 + pulse * 6, l * 0.62 + pulse * 6, 0, 0, 6.2832); ctx.stroke();
+    ctx.restore();
+    const rate = G.shield < 1 ? 16 : 8;
+    ctx.globalAlpha = Math.floor(tnow * rate) % 2 ? 0.45 : 1;
+  }
+
   // Shadow
   ctx.fillStyle = "rgba(0,0,0,0.22)"; hullPath(w, l, 6, 8); ctx.fill();
   // Hull
@@ -933,6 +997,7 @@ function drawBoat() {
   ctx.restore();
   // Stern flag
   poly([0, bot - 4, w * 0.22, bot + 6, 0, bot + 14], getCss("--pb-accent"));
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 function hullPath(w, l, ox, oy) {
